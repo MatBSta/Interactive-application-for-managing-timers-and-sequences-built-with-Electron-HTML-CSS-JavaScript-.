@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Timer</title>
+  <style>
+    :root{
+      --base-w: 842px; --base-h: 654px;
+      --gap:.5rem; --timer-minh:66px; --next-h:2.30rem;
+      --state-gray:#444; --state-yellow:#3b3a1f; --state-off:#151515;
+      --arrow-w:140px; --arrow-extra-gap:36px; --side-btn-w:2.8rem;
+      --circle-font:18px;
+      --next-h: 2.30rem;      /* height of each right-stack button (Refresh / ⚙ / Clear) */
+      --stack-gap: .35rem;    /* vertical gap between them (must match .right-stack gap) */
+      --circles: 5;            /* liczba przycisków w górnym rzędzie */
+      --circle-h: calc(var(--next-h) * 2 + var(--stack-gap));
+      --circle-radius: 10px;   /* zaokrąglenie 1–5 */
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    html,body{width:100vw;height:100vh;margin:0;overflow:hidden;background:#121212;color:#e0e0e0;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    #app{position:fixed;top:0;left:0;width:var(--base-w);height:var(--base-h);transform-origin:0 0}
+    .wrap{position:relative;width:100%;height:100%}
+    .content{display:grid;grid-template-rows:auto auto 1fr;gap:.5rem;height:100%;margin:0}
+    .panel{width:100%;background:#161616;border:1px solid #242424;border-radius:10px;padding:.55rem;margin:0}
+    .timers{width:100%;display:grid;grid-template-columns:repeat(6,1fr);gap:var(--gap)}
+    .timer-box{background:#1c1c1c;border-radius:10px;padding:.5rem .7rem;border:2px solid transparent;transition:.2s;cursor:pointer;min-height:var(--timer-minh);display:flex;flex-direction:column;align-items:center;justify-content:center;row-gap:.22rem}
+    .timer-box.active{border-color:#888;background:#1d1d1d;box-shadow:0 0 5px #111}
+    .timer-label{font-weight:800;font-size:1rem;letter-spacing:.5px}
+    .timer-time{font-size:1.35rem;font-variant-numeric:tabular-nums}
+    .dark-green{background:#1b3520!important}
+    .dark-yellow{background:#3b3a1f!important}
+    .dark-red{background:#552020!important}
+
+    /* góra: 1–5 + next + prawa kolumna */
+    .top-controls{width:100%;display:grid;grid-template-columns:1fr var(--side-btn-w);grid-template-rows:auto var(--next-h);grid-template-areas:"circles right" "next right";gap:var(--gap);align-items:stretch;margin:0;padding:0 6px}
+    .circle-row{
+      grid-area:circles;
+      display:grid;
+      grid-template-columns:repeat(var(--circles), 1fr);
+      gap:var(--gap);
+      align-items:stretch;
+    }
+    .circle-btn{
+      width:100%;
+      height:var(--circle-h);
+      border-radius:var(--circle-radius);
+      border:none;
+      display:grid;
+      place-items:center;
+      font-size:var(--circle-font,1rem);
+      background:#444; color:#ddd;
+      box-shadow:inset 0 0 0 2px #2a2a2a;
+    }
+    .next-btn{
+      height:var(--next-h);
+      line-height:1;
+      box-sizing:border-box;
+    }
+    .circle-btn:active{transform:scale(.98)}
+    .circle-btn.used{background:#151515;color:#555}
+    .circle-btn.yellow{background:#3b3a1f}
+    .circle-btn.green{background:#1b3520}
+    .circle-btn.red{background:#552020}
+
+    .right-stack{
+      grid-area:right;
+      width:var(--side-btn-w);
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      justify-content:flex-start;
+      align-items:stretch;
+      gap:var(--stack-gap);
+      padding:2px 0;
+    }
+
+    .rect-btn{width:100%;height:var(--next-h);border-radius:10px;border:none;background:#2a2a2a;color:#e0e0e0;display:grid;place-items:center;font-size:1.05rem;box-shadow:inset 0 0 0 1px #333;cursor:pointer;transition:background .18s}
+    .rect-btn:hover{background:#303030}
+
+    .next-btn{grid-area:next;width:100%;height:var(--next-h);padding:0 1rem;font-size:1.05rem;font-weight:800;cursor:pointer;background:#2a2a2a;color:#e0e0e0;border:none;border-radius:10px;transition:.18s;box-shadow:0 0 0 1px #333 inset;display:flex;align-items:center;justify-content:center}
+    .next-btn:hover{background:#303030}
+    .next-btn:active{transform:translateY(1px)}
+    .next-btn.last{background:#552020;box-shadow:0 0 0 1px #6a2a2a inset}
+
+    /* dół 4×8 + strzałki */
+    .bottom-area{position:relative;z-index:3;width:100%;height:100%;padding:.2rem calc(var(--arrow-w) + var(--arrow-extra-gap)) 4px;box-sizing:border-box}
+    .bottom-grid{position:relative;z-index:3;width:100%;height:100%;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(8,1fr);gap:var(--gap)}
+    .task-button{background:var(--state-gray);color:#ddd;border:none;border-radius:6px;font-size:1rem;cursor:pointer;transition:background .2s;display:grid;place-items:center;user-select:none;width:100%;height:100%}
+    .task-button.task-yellow{background:var(--state-yellow);color:#ddd}
+    .task-button.task-off{background:var(--state-off);color:#555}
+
+    .arrow{position:absolute;z-index:4;top:.2rem;bottom:4px;width:var(--arrow-w);cursor:pointer;user-select:none;display:flex;align-items:stretch}
+    .arrow.left{left:0}.arrow.right{right:0}
+    .arrow svg{width:100%;height:100%;display:block;pointer-events:auto}
+    .arrow polygon{fill:var(--state-gray)}
+    .arrow.off polygon{fill:var(--state-off)}
+    .arrow.off { opacity:.15; }
+    .arrow:not(.off) polygon{ stroke:#2a2a2a; stroke-width:2; }
+
+    /* modal */
+    .modal{position:fixed;inset:0;padding:12px;background:rgba(0,0,0,.35);z-index:1000;display:none}
+    .modal.show{display:grid;place-items:center}
+    .modal-card{width:min(420px,var(--base-w));max-height:calc(var(--base-h) - 24px);overflow:auto;background:#1a1a1a;color:#e0e0e0;padding:12px 14px 14px;border-radius:8px;box-shadow:0 0 15px rgba(0,0,0,.7)}
+    .modal-card .header{display:flex;justify-content:flex-end;margin-bottom:4px}
+    .modal-card .close-btn{background:transparent;border:none;color:#aaa;font-size:18px;cursor:pointer}
+    .modal-card label{display:block;margin-bottom:10px;text-align:left;font-size:14px}
+    .modal-card input[type="number"],.modal-card input[type="range"],.modal-card input[type="file"]{width:100%;background:#232323;color:#e0e0e0;border:1px solid #2a2a2a;border-radius:6px;padding:6px 8px;margin-top:6px}
+    .modal-card .row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+    .modal-card .row input{text-align:center}
+    .modal-card button{background:#555;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+    .inline{display:flex;align-items:center;gap:.5rem}
+    .switch{display:flex;align-items:center;gap:.5rem}
+    .switch input{width:1.2rem;height:1.2rem}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="wrap">
+      <div class="content">
+        <div class="panel"><div class="timers" id="timers"></div></div>
+
+        <div class="top-controls">
+          <div class="circle-row" id="circleRow"></div>
+          <button class="next-btn" id="circlesNextBtn">—</button>
+          <div class="right-stack">
+            <button class="rect-btn" id="circlesResetBtn" title="Reset sekwencji">⟳</button>
+            <button class="rect-btn" id="settingsBtn"    title="Ustawienia">⚙️</button>
+            <button class="rect-btn" id="bottomClearBtn" title="Wyczyść siatkę">⟲</button>
+          </div>
+        </div>
+
+        <div class="bottom-area" id="bottomArea">
+          <div id="arrowLeft" class="arrow left off" aria-hidden="true">
+            <svg viewBox="0 0 80 500" preserveAspectRatio="none"><polygon points="10,20 70,20 40,480" /></svg>
+          </div>
+          <div id="arrowRight" class="arrow right" aria-hidden="true">
+            <svg viewBox="0 0 80 500" preserveAspectRatio="none"><polygon points="10,480 70,480 40,20" /></svg>
+          </div>
+          <div class="bottom-grid" id="bottomGrid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <audio id="beep" preload="auto" src="sound.mp3"></audio>
+
+  <!-- USTAWIENIA -->
+  <div id="settingsModal" class="modal">
+    <div class="modal-card">
+      <div class="header"><button class="close-btn" id="settingsCloseBtn" title="Zamknij">✕</button></div>
+
+      <div class="row" style="margin-bottom:6px">
+        <div><label>Dzień<input type="number" id="d-day" min="1" max="31"></label></div>
+        <div><label>Mies.<input type="number" id="d-month" min="1" max="12"></label></div>
+        <div><label>Rok<input type="number" id="d-year" min="1970" max="2100"></label></div>
+        <div><label>Godz.<input type="number" id="d-hour" min="0" max="23"></label></div>
+        <div><label>Min.<input type="number" id="d-minute" min="0" max="59"></label></div>
+      </div>
+      <div class="inline" style="margin:0 0 8px 0">
+        <span style="color:#aaa">Aktualnie:</span>
+        <span id="startDateDisplay" style="color:#ccc;margin-left:.5rem">--/--/---- --:--</span>
+      </div>
+
+      <div class="inline" style="justify-content:space-between; gap:10px; margin-bottom:8px">
+        <label style="margin:0; flex:1; text-align:left">Czas przed cyklem (sekundy)
+          <input type="range" id="preAlarmSlider" min="1" max="30" value="10" style="margin-top:6px">
+        </label>
+        <div style="min-width:40px; text-align:right"><span id="preAlarmValue">10</span>s</div>
+        <button id="playTestButton" title="Test dźwięku" style="padding:6px 10px">🔊</button>
+      </div>
+
+      <label style="text-align:left">Głośność
+        <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.5">
+      </label>
+
+      <div class="switch" style="margin-top:6px">
+        <input type="checkbox" id="pinToggle"><label for="pinToggle">Zawsze na wierzchu (📌)</label>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #2a2a2a;margin:10px 0">
+
+      <!-- (opcjonalny) wybór kodowania; domyślnie ukryty -->
+      <div class="inline" style="justify-content:space-between; gap:8px">
+        <input type="file" id="labelsFile" accept=".csv" style="flex:1">
+        <select id="csvEncoding" title="Kodowanie CSV" style="display:none">
+          <option value="auto" selected>auto</option>
+          <option value="utf-8">UTF-8</option>
+          <option value="windows-1250">Windows-1250</option>
+          <option value="iso-8859-2">ISO-8859-2</option>
+        </select>
+        <button id="importLabelsBtn">Importuj</button>
+        <button id="exportLabelsBtn">Eksportuj</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BASE_W=842, BASE_H=654;
+    const CIRCLES_COUNT = 5; // 1–5
+    const isElectron = !!window.electronAPI;
+
+    function fitScale(){ const vw=innerWidth, vh=innerHeight; const s=Math.min(vw/BASE_W, vh/BASE_H); const app=document.getElementById('app'); app.style.transform=`translate(${(vw-BASE_W*s)/2}px, ${(vh-BASE_H*s)/2}px) scale(${s})`; }
+    function pad2(n){ return String(n).padStart(2,"0"); }
+    function formatRemaining(totalSec){ const h=Math.floor(totalSec/3600); const m=Math.floor((totalSec%3600)/60); const s=totalSec%60; return h>0?`${h}:${pad2(m)}:${pad2(s)}`:`${pad2(m)}:${pad2(s)}`; }
+    function loadStartDate(){ const iso=localStorage.getItem("startDateISO"); return iso?new Date(iso):null; }
+
+    function defaultBottomLabels(){ return [[...Array(8)].map((_,i)=>String(i+1)),[...Array(8)].map((_,i)=>String(i+9)),[...Array(8)].map((_,i)=>'L'+(i+1)),[...Array(8)].map((_,i)=>String(i+1))]; }
+    function saveBottomLabelsLS(arr){ try{ localStorage.setItem('bottomLabels', JSON.stringify(arr)); }catch{} }
+    function loadBottomLabelsLS(){ try{ const s=localStorage.getItem('bottomLabels'); if(!s) return null; const a=JSON.parse(s); if(Array.isArray(a)&&a.length===4&&a.every(c=>Array.isArray(c)&&c.length===8)) return a; }catch{} return null; }
+    function parseCSVText(text){
+      const lines=text.trim().split(/\r?\n/);
+      if(lines.length && /col/i.test(lines[0])) lines.shift();
+      const cols=[[],[],[],[]];
+      for(let r=0;r<8;r++){
+        const row=(lines[r]||'').split(/;|,|\t/);
+        for(let c=0;c<4;c++){ const v=row[c]?row[c].trim():''; cols[c][r]=v||defaultBottomLabels()[c][r]; }
+      }
+      return cols;
+    }
+    function aoaFromBottomLabels(lbls){ const rows=[]; for(let r=0;r<8;r++) rows.push([lbls[0][r],lbls[1][r],lbls[2][r],lbls[3][r]]); return rows; }
+
+    async function loadLabelsPersistent(){
+      if(isElectron && window.electronAPI.loadLabels){
+        const res=await window.electronAPI.loadLabels(); if(res?.ok && Array.isArray(res.data)) return res.data;
+      }
+      return loadBottomLabelsLS() || defaultBottomLabels();
+    }
+    async function persistLabels(arr){
+      saveBottomLabelsLS(arr);
+      if(isElectron && window.electronAPI.saveLabels){ try{ await window.electronAPI.saveLabels(arr); }catch{} }
+    }
+
+    // === NOWE: dekodowanie CSV z auto-wykryciem kodowania ===
+    function decodeCSVBuffer(buf, forcedEncoding) {
+      const encodings = (forcedEncoding && forcedEncoding !== 'auto')
+        ? [forcedEncoding]
+        : ['utf-8', 'windows-1250', 'iso-8859-2'];
+
+      // heurystyka: mniej niż 1% znaków U+FFFD = „��”
+      const looksOK = (txt) => {
+        const bad = (txt.match(/\uFFFD/g) || []).length;
+        return bad <= txt.length * 0.01;
+      };
+
+      for (const enc of encodings) {
+        try {
+          const dec = new TextDecoder(enc, { fatal: false });
+          let txt = dec.decode(buf);
+          if (txt.charCodeAt(0) === 0xFEFF) txt = txt.slice(1); // usuń BOM
+          if (forcedEncoding || looksOK(txt)) return txt;
+        } catch (e) { /* spróbuj następne */ }
+      }
+      // awaryjnie UTF-8
+      return new TextDecoder('utf-8').decode(buf);
+    }
+
+    async function boot(){
+      const intervals=[240,120,60,30,25,15];
+      const alarmDurationSec=1.5;
+      let preAlarmSeconds=parseInt(localStorage.getItem('preAlarmSeconds')||'10',10);
+      let alarmVolume=parseFloat(localStorage.getItem('alarmVolume')||'0.5');
+      let startDate=loadStartDate()||new Date("2025-06-27T10:00:00");
+      const toggleState={};
+      const beep=document.getElementById("beep");
+
+      // ustawienia live
+      const preAlarmSliderEl=document.getElementById('preAlarmSlider');
+      const preAlarmValueEl =document.getElementById('preAlarmValue');
+      const volumeSliderEl  =document.getElementById('volumeSlider');
+      const pinToggleEl     =document.getElementById('pinToggle');
+      preAlarmSliderEl.addEventListener('input',(e)=>{ preAlarmSeconds=+e.target.value; preAlarmValueEl.textContent=preAlarmSeconds; localStorage.setItem('preAlarmSeconds', String(preAlarmSeconds)); });
+      volumeSliderEl.addEventListener('input',(e)=>{ alarmVolume=+e.target.value; localStorage.setItem('alarmVolume', String(alarmVolume)); });
+      pinToggleEl.addEventListener('change',async(e)=>{ const pinned=e.target.checked; localStorage.setItem('alwaysOnTop', JSON.stringify(pinned)); if(isElectron && window.electronAPI.setAlwaysOnTop){ await window.electronAPI.setAlwaysOnTop(pinned); } });
+
+      // strzałki
+      let rightArrowActive=true;
+      const L=document.getElementById('arrowLeft'), R=document.getElementById('arrowRight');
+      const updateArrows=()=>{ L.classList.toggle('off', rightArrowActive); R.classList.toggle('off', !rightArrowActive); };
+      updateArrows(); [L,R].forEach(el=>el.addEventListener('click',()=>{ rightArrowActive=!rightArrowActive; updateArrows(); }));
+
+      // dźwięk: raz na sekundę max
+      let audioPrimed=false, lastBeepSecond=-1;
+      function triggerBeep(force=false){ const sec=Math.floor(Date.now()/1000); if(!force && sec===lastBeepSecond) return; lastBeepSecond=sec; beep.volume=alarmVolume; beep.currentTime=0; beep.play().catch(()=>{}); setTimeout(()=>{ beep.pause(); beep.currentTime=0; }, alarmDurationSec*1000); }
+      function primeAudio(){ if(audioPrimed) return; try{ const prev=beep.volume; beep.volume=0; beep.play().then(()=>{ beep.pause(); beep.currentTime=0; beep.volume=prev; audioPrimed=true; }).catch(()=>{});}catch(e){} }
+
+      function createTimer(interval){
+        const intervalSec=interval*60; toggleState[interval]=toggleState[interval]??false;
+        const box=document.createElement("div"); box.className="timer-box"; box.id=`box-${interval}`;
+        const label=document.createElement("div"); label.className="timer-label"; label.textContent= interval>=60 ? `${Math.floor(interval/60)}H` : `${interval}M`;
+        const timeDisplay=document.createElement("div"); timeDisplay.className="timer-time"; timeDisplay.id=`timer-${interval}`; timeDisplay.textContent="--:--";
+        let prevNextIn=null, lastRemain=null;
+        box.onclick=()=>{ primeAudio(); toggleState[interval]=!toggleState[interval]; box.classList.toggle("active",toggleState[interval]); localStorage.setItem("activeTimers", JSON.stringify(intervals.filter(i=>toggleState[i]))); };
+        box.append(label,timeDisplay); document.getElementById("timers").appendChild(box);
+        function update(){
+          const now=new Date(); const elapsed=Math.floor((now-startDate)/1000);
+          const nextIn=(elapsed>=0)? intervalSec-(elapsed%intervalSec) : intervalSec-((intervalSec+(elapsed%intervalSec))%intervalSec);
+          const lastCycleTime=startDate.getTime()+Math.floor(elapsed/intervalSec)*intervalSec*1000;
+          const timeSinceEvent=Math.floor((now-lastCycleTime)/1000);
+          timeDisplay.textContent=formatRemaining(nextIn);
+          box.classList.remove("dark-green","dark-yellow","dark-red");
+          if(nextIn<=20) box.classList.add("dark-red");
+          if(interval!==30 && timeSinceEvent>=0){ if(timeSinceEvent<180) box.classList.add("dark-green"); else if(timeSinceEvent<300) box.classList.add("dark-yellow"); }
+          if(interval===30){ if(prevNextIn!==null && nextIn>prevNextIn){ document.querySelectorAll('.task-button').forEach(btn=>btn.classList.remove('task-yellow','task-off')); } prevNextIn=nextIn; }
+          if(toggleState[interval] && lastRemain!==null && lastRemain>preAlarmSeconds && nextIn<=preAlarmSeconds){ triggerBeep(); }
+          lastRemain=nextIn;
+        }
+        update(); setInterval(update,1000);
+      }
+
+      const saved=localStorage.getItem("activeTimers");
+      if(saved) JSON.parse(saved).forEach(i=>{ toggleState[i]=true; });
+
+      // 1–5 (rectangles)
+      document.documentElement.style.setProperty('--circles', String(CIRCLES_COUNT));
+      const circlesRow=document.getElementById('circleRow'), numberBtns=[];
+      for(let i=1;i<=CIRCLES_COUNT;i++){
+        const btn=document.createElement('button'); btn.className='circle-btn'; btn.textContent=i;
+        btn.addEventListener('click',()=>{ if(circles_excluded.has(i)) circles_excluded.delete(i); else circles_excluded.add(i); renderCircles(); });
+        circlesRow.appendChild(btn); numberBtns.push(btn);
+      }
+      const circlesResetBtn=document.getElementById('circlesResetBtn'),
+            settingsBtn    =document.getElementById('settingsBtn'),
+            bottomClearBtn =document.getElementById('bottomClearBtn'),
+            circlesNextBtn =document.getElementById('circlesNextBtn');
+      let circles_order=[], circles_cursor=0, circles_excluded=new Set();
+      function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+      function startNew(){ circles_excluded.clear(); circles_order=shuffle([...Array(CIRCLES_COUNT)].map((_,i)=>i+1)); circles_cursor=0; renderCircles(); }
+      function nextIncluded(from){ let i=from; while(i<circles_order.length && circles_excluded.has(circles_order[i])) i++; return i; }
+      function updNextLbl(idx){ circlesNextBtn.classList.remove('last'); const ci=nextIncluded(idx); if(ci>=circles_order.length){ circlesNextBtn.textContent='Nowa sekwencja'; return;} const cur=circles_order[ci]; const ni=nextIncluded(ci+1); const last=(ni>=circles_order.length); const nxt= last?'—':circles_order[ni]; circlesNextBtn.textContent=`${cur} → ${nxt}`; if(last) circlesNextBtn.classList.add('last'); }
+      function renderCircles(){
+        numberBtns.forEach(b=>b.className='circle-btn');
+        const fi=nextIncluded(0); if(fi>=circles_order.length){ startNew(); return;}
+        let ci=nextIncluded(circles_cursor); if(ci>=circles_order.length){ startNew(); return;}
+        for(let i=0;i<ci;i++){ const n=circles_order[i]; if(!circles_excluded.has(n)) numberBtns[n-1].classList.add('used'); }
+        const cur=circles_order[ci]; const ni=nextIncluded(ci+1); const last=(ni>=circles_order.length);
+        if(!circles_excluded.has(cur)) numberBtns[cur-1].classList.add(last?'red':'green');
+        if(!last){ const nxt=circles_order[ni]; if(!circles_excluded.has(nxt)) numberBtns[nxt-1].classList.add('yellow'); }
+        circles_excluded.forEach(n=>numberBtns[n-1].classList.add('used'));
+        updNextLbl(ci);
+      }
+      circlesNextBtn.addEventListener('click',()=>{ primeAudio(); const ci=nextIncluded(circles_cursor); const ni=nextIncluded(ci+1); const last=(ni>=circles_order.length); if(last){ startNew(); return;} circles_cursor=ni; renderCircles(); });
+      circlesResetBtn.addEventListener('click', startNew);
+
+      // dół 4×8
+      const bottomGrid=document.getElementById('bottomGrid');
+      function getTaskState(el){ if(el.classList.contains('task-off')) return 'off'; if(el.classList.contains('task-yellow')) return 'yellow'; return 'gray'; }
+      function setTaskState(el,s){ el.classList.remove('task-yellow','task-off'); if(s==='yellow') el.classList.add('task-yellow'); if(s==='off') el.classList.add('task-off'); }
+
+      let bottomLabels = await loadLabelsPersistent();
+      function applyBottomLabels(){ document.querySelectorAll('.task-button').forEach(btn=>{ const r=+btn.dataset.r, c=+btn.dataset.c; btn.textContent = bottomLabels[c-1][r-1]; }); }
+
+      for(let r=1;r<=8;r++){
+        for(let c=1;c<=4;c++){
+          const btn=document.createElement('button'); btn.className='task-button';
+          btn.dataset.r=String(r); btn.dataset.c=String(c);
+          btn.textContent=bottomLabels[c-1][r-1];
+          btn.style.gridColumn=String(c); btn.style.gridRow=String(r);
+          btn.addEventListener('click', ()=>{ const prev=getTaskState(btn); let next; if(prev==='gray') next='yellow'; else if(prev==='yellow') next='off'; else next='gray'; setTaskState(btn,next); if(next==='off' && prev!=='off'){ rightArrowActive=!rightArrowActive; updateArrows(); }});
+          btn.addEventListener('contextmenu',(e)=>{ e.preventDefault(); if(getTaskState(btn)==='off') return; setTaskState(btn,'off'); rightArrowActive=!rightArrowActive; updateArrows(); });
+          bottomGrid.appendChild(btn);
+        }
+      }
+      const clearBottom=()=>{ document.querySelectorAll('.task-button').forEach(btn=>btn.classList.remove('task-yellow','task-off')); };
+      bottomClearBtn.addEventListener('click', clearBottom);
+
+      // Ustawienia (live)
+      const settingsModal=document.getElementById("settingsModal");
+      document.getElementById("playTestButton").addEventListener('click', ()=>triggerBeep(true));
+      settingsBtn.addEventListener('click', ()=>{
+        const sd=loadStartDate()||startDate;
+        document.getElementById("d-day").value   = sd.getDate();
+        document.getElementById("d-month").value = sd.getMonth()+1;
+        document.getElementById("d-year").value  = sd.getFullYear();
+        document.getElementById("d-hour").value  = sd.getHours();
+        document.getElementById("d-minute").value= sd.getMinutes();
+        document.getElementById("startDateDisplay").textContent =
+          `${String(sd.getDate()).padStart(2,'0')}/${String(sd.getMonth()+1).padStart(2,'0')}/${sd.getFullYear()} ${String(sd.getHours()).padStart(2,'0')}:${String(sd.getMinutes()).padStart(2,'0')}`;
+        document.getElementById("preAlarmSlider").value = preAlarmSeconds;
+        document.getElementById("preAlarmValue").textContent = preAlarmSeconds;
+        document.getElementById("volumeSlider").value = alarmVolume;
+        document.getElementById("pinToggle").checked = JSON.parse(localStorage.getItem("alwaysOnTop")||"false");
+        settingsModal.classList.add("show");
+      });
+      document.getElementById("settingsCloseBtn").addEventListener('click', ()=>settingsModal.classList.remove("show"));
+
+      function updateStartDateLive(){
+        const d=+document.getElementById("d-day").value;
+        const m=+document.getElementById("d-month").value;
+        const y=+document.getElementById("d-year").value;
+        const h=+document.getElementById("d-hour").value;
+        const mi=+document.getElementById("d-minute").value;
+        if([d,m,y,h,mi].some(isNaN)) return;
+        startDate = new Date(y, m-1, d, h, mi, 0, 0);
+        localStorage.setItem("startDateISO", startDate.toISOString());
+        document.getElementById("startDateDisplay").textContent =
+          `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y} ${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+      }
+      ["d-day","d-month","d-year","d-hour","d-minute"].forEach(id=>{ document.getElementById(id).addEventListener('input', updateStartDateLive); });
+
+      // IMPORT/EXPORT — Electron: XLSX, przeglądarka: CSV (z poprawnym kodowaniem)
+      const fileInput=document.getElementById('labelsFile');
+      const encodingSelect=document.getElementById('csvEncoding');
+
+      document.getElementById('importLabelsBtn').addEventListener('click', async ()=>{
+        if(isElectron && window.electronAPI.importLabelsXLSX){
+          const res=await window.electronAPI.importLabelsXLSX();
+          if(!res?.ok) return;
+          bottomLabels=res.data; applyBottomLabels(); await persistLabels(bottomLabels);
+          alert('Zaimportowano nazwy z Excel.');
+        }else{
+          fileInput.click();
+        }
+      });
+
+      // >>> ZMIANA: czytamy jako ArrayBuffer i dekodujemy sami
+      fileInput.addEventListener('change', ()=>{
+        const f=fileInput.files?.[0]; if(!f) return;
+        const reader=new FileReader();
+        reader.onload=e=>{
+          try{
+            const buf=e.target.result; // ArrayBuffer
+            const forced = encodingSelect?.value || 'auto';
+            const text = decodeCSVBuffer(buf, forced);
+            bottomLabels = parseCSVText(text);
+            applyBottomLabels();
+            persistLabels(bottomLabels);
+            alert('Zaimportowano nazwy (CSV).');
+          }catch(err){
+            console.error(err);
+            alert('Błąd importu CSV.');
+          }
+        };
+        reader.readAsArrayBuffer(f); // <— kluczowe
+        fileInput.value='';
+      });
+
+      document.getElementById('exportLabelsBtn').addEventListener('click', async ()=>{
+        if(isElectron && window.electronAPI.exportLabelsXLSX){
+          const res=await window.electronAPI.exportLabelsXLSX(bottomLabels);
+          if(res?.ok) alert('Zapisano labels.xlsx');
+        }else{
+          const rows=aoaFromBottomLabels(bottomLabels);
+          const header=['Col1','Col2','Col3','Col4'];
+          const csvCore=[header.join(','),...rows.map(
+            r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')
+          )].join('\r\n');
+
+          // >>> DODANE: BOM dla UTF-8, żeby Excel widział ogonki
+          const csvWithBOM = '\uFEFF' + csvCore;
+
+          const blob=new Blob([csvWithBOM],{type:'text/csv;charset=utf-8;'});
+          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='labels.csv';
+          document.body.appendChild(a); a.click(); a.remove();
+        }
+      });
+
+      // rozruch
+      intervals.forEach(createTimer);
+      JSON.parse(localStorage.getItem("activeTimers")||"[]").forEach(i=>document.getElementById(`box-${i}`)?.classList.add('active'));
+      startNew();
+
+      fitScale();
+      addEventListener('resize', fitScale);
+      addEventListener('beforeunload', ()=>{ try{ saveBottomLabelsLS(bottomLabels); }catch{} });
+    }
+
+    (document.readyState==="loading")?document.addEventListener("DOMContentLoaded", boot):boot();
+
+    // blokada klawiatury (mysz-only)
+    (function strictlyMouseOnly(){
+      function eat(e){ e.preventDefault(); e.stopImmediatePropagation(); return false; }
+      ['keydown','keypress','keyup'].forEach(t=>window.addEventListener(t, eat, true));
+    })();
+  </script>
+</body>
+</html>
